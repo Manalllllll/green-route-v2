@@ -3,6 +3,8 @@ import folium
 from streamlit_folium import st_folium
 import pandas as pd
 from influxdb_client import InfluxDBClient
+from fpdf import FPDF
+import os
 
 st.set_page_config(page_title="Green Route", page_icon="🌱", layout="wide")
 st.title("🌱 Green Route — Logistique Durable")
@@ -24,7 +26,6 @@ def lire_donnees():
         token  = st.secrets["INFLUX_TOKEN"]
         org    = st.secrets["INFLUX_ORG"]
         bucket = st.secrets["INFLUX_BUCKET"]
-
         client = InfluxDBClient(url=url, token=token, org=org)
         query = f'''
         from(bucket: "{bucket}")
@@ -46,13 +47,17 @@ def lire_donnees():
 with st.spinner("📡 Connexion InfluxDB..."):
     donnees = lire_donnees()
 
+co2_val     = donnees.get("co2", 0)
+vitesse_val = donnees.get("vitesse", 0)
+carb_val    = donnees.get("carburant", 100)
+stop_val    = donnees.get("stop", 1)
+
 col1, col2 = st.columns([2, 1])
 
 with col1:
     st.subheader("🗺️ Carte des livraisons")
     carte = folium.Map(location=[33.5731, -7.5898], zoom_start=11)
-    stop_actuel = int(donnees.get("stop", 1))
-
+    stop_actuel = int(stop_val)
     for i, p in enumerate(points):
         if i == 0:
             couleur = "blue"
@@ -62,23 +67,16 @@ with col1:
             couleur = "gray"
         else:
             couleur = "green"
-
         folium.Marker(
             location=[p["lat"], p["lon"]],
             popup=p["nom"], tooltip=p["nom"],
             icon=folium.Icon(color=couleur)
         ).add_to(carte)
-
     folium.PolyLine([(p["lat"], p["lon"]) for p in points], color="green", weight=3).add_to(carte)
     st_folium(carte, width=700, height=400)
 
 with col2:
     st.subheader("📡 Données du camion")
-    co2_val     = donnees.get("co2", 0)
-    vitesse_val = donnees.get("vitesse", 0)
-    carb_val    = donnees.get("carburant", 100)
-    stop_val    = donnees.get("stop", 1)
-
     if co2_val >= 9:
         st.error(f"🔴 ALERTE CO₂ ÉLEVÉ : {co2_val:.2f} kg")
     elif co2_val >= 6:
@@ -87,11 +85,9 @@ with col2:
         st.success(f"🟢 CO₂ Faible : {co2_val:.2f} kg")
     else:
         st.info("⏳ En attente des données...")
-
     st.metric("🚛 Vitesse",     f"{vitesse_val:.0f} km/h")
     st.metric("⛽ Carburant",   f"{carb_val:.1f} L")
     st.metric("📍 Stop actuel", f"Livraison {int(stop_val)}")
-
     if co2_val > 0:
         arbres = round((10 - co2_val) * 0.3, 1)
         if arbres > 0:
@@ -105,8 +101,62 @@ df = pd.DataFrame({
     "CO2 Route Verte (kg)":  [7.1,  6.8,  7.5,  6.9,  7.2],
 })
 st.bar_chart(df.set_index("Stop"))
+
+st.divider()
+st.subheader("💬 Assistant Green Route")
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+if prompt := st.chat_input("Pose une question sur la tournée..."):
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+    reponse = f"""🤖 Analyse de la tournée :
+- Vitesse : **{vitesse_val:.0f} km/h**
+- CO₂ émis : **{co2_val:.2f} kg**"""
+    if co2_val >= 9:
+        reponse += "\n- ⚠️ CO₂ trop élevé — réduire la vitesse !"
+    elif co2_val >= 6:
+        reponse += "\n- 🟡 CO₂ moyen — route optimisable"
+    else:
+        reponse += "\n- 🟢 Excellente conduite écologique !"
+    reponse += f"\n- 🌳 Économise **{round((10-co2_val)*0.3,1)} arbres** vs route rapide !"
+    with st.chat_message("assistant"):
+        st.markdown(reponse)
+    st.session_state.messages.append({"role": "assistant", "content": reponse})
+
+st.divider()
+st.subheader("📄 Rapport PDF")
+if st.button("📥 Générer le rapport PDF"):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", "B", 16)
+    pdf.cell(200, 10, "Green Route - Rapport de Tournee", ln=True, align="C")
+    pdf.ln(10)
+    pdf.set_font("Arial", size=12)
+    pdf.cell(200, 10, f"Vitesse : {vitesse_val:.0f} km/h", ln=True)
+    pdf.cell(200, 10, f"CO2 emis : {co2_val:.2f} kg", ln=True)
+    pdf.cell(200, 10, f"Carburant restant : {carb_val:.1f} L", ln=True)
+    pdf.cell(200, 10, f"Stop actuel : Livraison {int(stop_val)}", ln=True)
+    pdf.ln(10)
+    if co2_val >= 9:
+        pdf.cell(200, 10, "ALERTE : CO2 trop eleve !", ln=True)
+    elif co2_val >= 6:
+        pdf.cell(200, 10, "Attention : CO2 moyen", ln=True)
+    else:
+        pdf.cell(200, 10, "Excellent : CO2 faible !", ln=True)
+    pdf.ln(10)
+    arbres = round((10 - co2_val) * 0.3, 1)
+    pdf.cell(200, 10, f"Economies : {arbres} arbres vs route rapide", ln=True)
+    pdf.ln(10)
+    pdf.set_font("Arial", "I", 10)
+    pdf.cell(200, 10, "Green Route - Industrie 5.0 - Manal Fartah", ln=True, align="C")
+    pdf.output("rapport_green_route.pdf")
+    st.success("✅ Rapport PDF généré !")
+
 st.divider()
 st.markdown("🌱 **Green Route** · Industrie 5.0 · Manal FARTAH")
-
 if st.button("🔄 Rafraîchir"):
     st.rerun()
