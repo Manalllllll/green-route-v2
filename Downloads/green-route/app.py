@@ -1,3 +1,4 @@
+from fpdf import FPDF
 import streamlit as st
 import folium
 from streamlit_folium import st_folium
@@ -99,6 +100,76 @@ st.markdown("🌱 **Green Route** · Industrie 5.0 · Manal FARTAH")
 
 if st.button("🔄 Rafraîchir les données"):
     st.rerun()
+st.divider()
+st.subheader("💬 Assistant Green Route")
+
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+if prompt := st.chat_input("Pose une question sur la tournée..."):
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    contexte = f"""
+    Tu es un assistant expert en logistique durable et Industrie 5.0.
+    Voici les données actuelles du camion :
+    - Vitesse : {vitesse_val:.0f} km/h
+    - CO₂ émis : {co2_val:.2f} kg
+    - Carburant restant : {carb_val:.1f} L
+    - Stop actuel : Livraison {int(stop_val)}
+    Réponds en français de façon courte et claire.
+    """
+
+    reponse = f"""🤖 Voici l'analyse de la tournée actuelle :
+- La vitesse est de **{vitesse_val:.0f} km/h**
+- Le CO₂ émis est de **{co2_val:.2f} kg** """
+
+    if co2_val >= 9:
+        reponse += "\n- ⚠️ Le CO₂ est **trop élevé** — je recommande de réduire la vitesse !"
+    elif co2_val >= 6:
+        reponse += "\n- 🟡 Le CO₂ est **moyen** — la route peut être optimisée"
+    else:
+        reponse += "\n- 🟢 Excellente conduite ! La route est **très écologique**"
+
+    reponse += f"\n- 🌳 Cette tournée économise **{round((10-co2_val)*0.3,1)} arbres** vs route rapide !"
+
+    with st.chat_message("assistant"):
+        st.markdown(reponse)
+    st.session_state.messages.append({"role": "assistant", "content": reponse})
+st.divider()
+st.subheader("📄 Rapport PDF")
+
+if st.button("📥 Générer le rapport PDF"):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", "B", 16)
+    pdf.cell(200, 10, "Green Route - Rapport de Tournee", ln=True, align="C")
+    pdf.ln(10)
+    pdf.set_font("Arial", size=12)
+    pdf.cell(200, 10, f"Vitesse : {vitesse_val:.0f} km/h", ln=True)
+    pdf.cell(200, 10, f"CO2 emis : {co2_val:.2f} kg", ln=True)
+    pdf.cell(200, 10, f"Carburant restant : {carb_val:.1f} L", ln=True)
+    pdf.cell(200, 10, f"Stop actuel : Livraison {int(stop_val)}", ln=True)
+    pdf.ln(10)
+    if co2_val >= 9:
+        pdf.cell(200, 10, "ALERTE : CO2 trop eleve !", ln=True)
+    elif co2_val >= 6:
+        pdf.cell(200, 10, "Attention : CO2 moyen", ln=True)
+    else:
+        pdf.cell(200, 10, "Excellent : CO2 faible !", ln=True)
+    pdf.ln(10)
+    arbres = round((10 - co2_val) * 0.3, 1)
+    pdf.cell(200, 10, f"Economies : {arbres} arbres plantes vs route rapide", ln=True)
+    pdf.ln(10)
+    pdf.set_font("Arial", "I", 10)
+    pdf.cell(200, 10, "Green Route - Industrie 5.0 - Manal Fartah", ln=True, align="C")
+    pdf.output("rapport_green_route.pdf")
+    st.success("✅ Rapport PDF généré ! Fichier : rapport_green_route.pdf")
 
 # Rafraîchissement automatique toutes les 3 secondes
 time.sleep(3)
