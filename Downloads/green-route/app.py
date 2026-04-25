@@ -25,46 +25,12 @@ from influxdb_client import InfluxDBClient
 
 def lire_donnees():
     try:
-        # Essaye d'abord InfluxDB
-        try:
-            import streamlit as st
-            url    = st.secrets["INFLUX_URL"]
-            token  = st.secrets["INFLUX_TOKEN"]
-            org    = st.secrets["INFLUX_ORG"]
-            bucket = st.secrets["INFLUX_BUCKET"]
-        except:
-            from config import INFLUX_URL, INFLUX_TOKEN, INFLUX_ORG, INFLUX_BUCKET
-            url, token, org, bucket = INFLUX_URL, INFLUX_TOKEN, INFLUX_ORG, INFLUX_BUCKET
-
-        client = InfluxDBClient(url=url, token=token, org=org)
-        query = f'''
-        SELECT * FROM "camion"
-        WHERE time >= now() - interval '30 seconds'
-        ORDER BY time DESC
-        LIMIT 1
-        '''
-        tables = client.query_api().query(query, org=org)
-        for table in tables:
-            for record in table.records:
-                return {
-                    "vitesse":   record["vitesse"],
-                    "co2":       record["co2"],
-                    "carburant": record["carburant"],
-                    "stop":      record["stop"]
-                }
-    except:
-        pass
-
-    # Si InfluxDB échoue, lit le fichier local
-    try:
         chemin = r"C:\Users\Manal Fartah\Downloads\green-route\donnees.json"
-        import json, os
         if os.path.exists(chemin):
             with open(chemin, "r") as f:
                 return json.load(f)
     except:
         pass
-
     return {"vitesse": 0, "co2": 0, "carburant": 100, "stop": 1}
 
 donnees = lire_donnees()
@@ -146,7 +112,8 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-if prompt := st.chat_input("Pose une question sur la tournée..."):
+prompt = st.text_input("💬 Pose une question sur la tournée...")
+if prompt:
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
